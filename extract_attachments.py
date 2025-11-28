@@ -148,11 +148,12 @@ def copy_attachments(attachments, output_dir="imessage_attachments"):
 
         try:
             shutil.copy2(source, dest_path)
+            # Note: spread att first, then override filename with the actual destination name
             copied_files.append({
+                **att,
                 'original': source,
                 'copied': str(dest_path),
-                'filename': dest_name,
-                **att
+                'filename': dest_name,  # Override att['filename'] with actual destination name
             })
         except Exception as e:
             errors += 1
@@ -165,32 +166,32 @@ def copy_attachments(attachments, output_dir="imessage_attachments"):
 
     return copied_files
 
-def convert_heic_images(copied_files, output_dir="extracted_images"):
-    """Convert HEIC images to JPEG for web viewing"""
+def convert_heic_images(copied_files, output_dir="web_ready_images"):
+    """Convert HEIC images to JPEG and copy all images to web_ready_images"""
 
     output_path = Path(output_dir)
     output_path.mkdir(exist_ok=True)
 
     heic_files = [f for f in copied_files if f['filename'].lower().endswith(('.heic', '.heif'))]
+    other_images = [f for f in copied_files if not f['filename'].lower().endswith(('.heic', '.heif'))]
 
-    if not heic_files:
-        print("ℹ️  No HEIC files to convert")
-        return copied_files
+    print(f"\n🖼️  Processing images for web...")
+    print(f"   HEIC files to convert: {len(heic_files)}")
+    print(f"   Other images to copy: {len(other_images)}")
 
-    print(f"\n🖼️  Converting {len(heic_files)} HEIC images to JPEG...")
-
+    # Convert HEIC files
     converted = 0
     for i, file_info in enumerate(heic_files):
         if i % 20 == 0 and i > 0:
-            print(f"  Progress: {i}/{len(heic_files)}")
+            print(f"  Converting HEIC: {i}/{len(heic_files)}")
 
         source = file_info['copied']
         jpeg_name = file_info['filename'].rsplit('.', 1)[0] + '.jpg'
         dest_path = output_path / jpeg_name
 
         if dest_path.exists():
-            file_info['converted'] = str(dest_path)
-            file_info['webPath'] = f"extracted_images/{jpeg_name}"
+            file_info['webPath'] = f"web_ready_images/{jpeg_name}"
+            converted += 1
             continue
 
         try:
@@ -201,14 +202,13 @@ def convert_heic_images(copied_files, output_dir="extracted_images"):
                 timeout=10
             )
             if result.returncode == 0:
-                file_info['converted'] = str(dest_path)
-                file_info['webPath'] = f"extracted_images/{jpeg_name}"
+                file_info['webPath'] = f"web_ready_images/{jpeg_name}"
                 converted += 1
         except:
             pass
 
-    # Also copy non-HEIC images to extracted_images
-    other_images = [f for f in copied_files if not f['filename'].lower().endswith(('.heic', '.heif'))]
+    # Copy non-HEIC images to web_ready_images
+    copied = 0
     for file_info in other_images:
         source = Path(file_info['copied'])
         dest_path = output_path / file_info['filename']
@@ -216,12 +216,16 @@ def convert_heic_images(copied_files, output_dir="extracted_images"):
         if not dest_path.exists():
             try:
                 shutil.copy2(source, dest_path)
+                copied += 1
             except:
                 pass
+        else:
+            copied += 1
 
-        file_info['webPath'] = f"extracted_images/{file_info['filename']}"
+        file_info['webPath'] = f"web_ready_images/{file_info['filename']}"
 
-    print(f"✅ Converted {converted} HEIC images")
+    print(f"✅ Converted {converted} HEIC images to JPEG")
+    print(f"✅ Copied {copied} other images")
 
     return copied_files
 
@@ -237,36 +241,24 @@ def update_json_with_images(image_files, json_file="imessage_data.json"):
     # Prepare image data for JSON
     images = []
     for img in image_files:
-        # Use web-accessible path
+        # Use web-accessible path - prefer webPath, then construct from filename
         if 'webPath' in img:
-            images.append({
-                'filename': img['filename'],
-                'path': img['webPath'],
-                'date': img['date'],
-                'contactName': img['contactName'],
-                'isFromMe': img['isFromMe'],
-                'mimeType': img.get('mimeType', 'image/jpeg')
-            })
-        elif 'converted' in img or 'copied' in img:
-            # Fallback to direct path
-            path = img.get('converted', img['copied'])
-            # Just use the path as-is if it's already relative
-            if Path(path).is_absolute():
-                try:
-                    rel_path = Path(path).relative_to(Path.cwd())
-                except ValueError:
-                    # If can't make relative, use filename in attachments dir
-                    rel_path = f"imessage_attachments/{img['filename']}"
-            else:
-                rel_path = path
-            images.append({
-                'filename': img['filename'],
-                'path': str(rel_path),
-                'date': img['date'],
-                'contactName': img['contactName'],
-                'isFromMe': img['isFromMe'],
-                'mimeType': img.get('mimeType', 'image/jpeg')
-            })
+            url = img['webPath']
+        elif img['filename'].lower().endswith(('.heic', '.heif')):
+            # HEIC files should be converted to jpg
+            jpeg_name = img['filename'].rsplit('.', 1)[0] + '.jpg'
+            url = f"web_ready_images/{jpeg_name}"
+        else:
+            url = f"web_ready_images/{img['filename']}"
+
+        images.append({
+            'url': url,  # Changed from 'path' to 'url' for index.html compatibility
+            'filename': img['filename'],
+            'date': img['date'],
+            'contactName': img['contactName'],
+            'isFromMe': img['isFromMe'],
+            'mimeType': img.get('mimeType', 'image/jpeg')
+        })
 
     # Update data
     data['images'] = images

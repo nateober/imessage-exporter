@@ -43,7 +43,8 @@ def convert_all_heic():
     other_images = []
 
     for img in data['images']:
-        url = img['url']
+        # Handle both 'url' and 'path' field names for compatibility
+        url = img.get('url') or img.get('path') or img.get('filename', '')
         if url.lower().endswith(('.heic', '.heif')):
             heic_images.append(img)
         else:
@@ -57,7 +58,9 @@ def convert_all_heic():
     updated_images = []
 
     for img in heic_images:
-        current_path = img['url']
+        current_path = img.get('url') or img.get('path') or img.get('filename', '')
+        # Expand home directory if needed
+        current_path = os.path.expanduser(current_path)
         if os.path.exists(current_path):
             # Create JPEG filename
             original_name = Path(current_path).stem
@@ -93,7 +96,9 @@ def convert_all_heic():
     copied = 0
 
     for img in other_images:
-        current_path = img['url']
+        current_path = img.get('url') or img.get('path') or img.get('filename', '')
+        # Expand home directory if needed
+        current_path = os.path.expanduser(current_path)
         if os.path.exists(current_path):
             filename = Path(current_path).name
             dest_path = web_dir / filename
@@ -125,7 +130,7 @@ def convert_all_heic():
     # Final verification
     web_compatible = 0
     for img in data['images']:
-        url = img['url']
+        url = img.get('url', '')
         if url.endswith(('.jpg', '.jpeg', '.png', '.gif', '.webp')) and os.path.exists(url):
             web_compatible += 1
 
