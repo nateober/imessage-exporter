@@ -22,42 +22,52 @@ The interface features a warm, personal aesthetic with:
 
 ## Quick Start
 
-### 1. Extract your iMessage data
+### Option 1: Unified CLI (Recommended)
 
 ```bash
+# Full export - extracts everything
+python3 imessage_export.py
+
+# Update with new messages only
+python3 imessage_export.py --update
+
+# Resolve contact names
+python3 imessage_export.py --contacts
+
+# Extract attachments only
+python3 imessage_export.py --attachments
+
+# Start web server
+python3 imessage_export.py --serve
+```
+
+### Option 2: Individual Scripts
+
+```bash
+# Extract messages
 python3 extract_messages_final_correct.py
+
+# Save contact mappings and group chat participants
+python3 save_contact_mappings.py
+
+# Resolve contacts via macOS Contacts app
+python3 update_contact_names.py
+
+# Extract and convert attachments
+python3 extract_attachments.py
+
+# Start web server
+python3 -m http.server 8000
 ```
 
 *Note: Requires Full Disk Access permission on macOS*
 
-### 2. Resolve contact names (optional but recommended)
-
-```bash
-# Save current contact mappings and group chat participants
-python3 save_contact_mappings.py
-
-# Resolve more contacts via macOS Contacts app
-python3 update_contact_names.py
-
-# Or import from VCF export
-python3 contacts_from_vcf.py --vcf
-```
-
-### 3. View in browser
-
-```bash
-# Start a local server
-python3 -m http.server 8000
-
-# Open in browser
-open http://localhost:8000
-```
-
 ## Project Structure
 
 ```
+├── imessage_export.py            # 🌟 Unified CLI app (recommended)
 ├── index.html                    # Web interface
-├── extract_messages_final_correct.py  # Main extraction script
+├── extract_messages_final_correct.py  # Message extraction script
 ├── save_contact_mappings.py      # Save contact & group chat mappings
 ├── update_contact_names.py       # Resolve contacts via macOS Contacts
 ├── contacts_from_vcf.py          # Import contacts from VCF/CSV
