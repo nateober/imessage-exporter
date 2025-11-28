@@ -2177,14 +2177,17 @@
                 }
                 if (!contact && image.contactName) {
                     // Try matching by phone number or name
+                    const imageDigits = image.contactName.replace(/\D/g, '');
                     contact = appData.contacts.find(c =>
                         c.phone === image.contactName ||
                         c.name === image.contactName ||
-                        (c.phone && image.contactName && c.phone.replace(/\D/g, '').includes(image.contactName.replace(/\D/g, '')))
+                        // Only do phone matching if contactName has digits (at least 7 for a phone number)
+                        (imageDigits.length >= 7 && c.phone && c.phone.replace(/\D/g, '').includes(imageDigits))
                     );
                 }
 
-                const displayName = contact ? contact.name : (image.contactName || 'Unknown');
+                // Use contactName directly since it already has the resolved name
+                const displayName = image.contactName || 'Unknown';
 
                 imageEl.innerHTML = `
                     <div class="image-loading">Loading...</div>
@@ -2261,13 +2264,16 @@
                 contact = appData.contacts.find(c => c.id === image.contactId);
             }
             if (!contact && image.contactName) {
+                const imageDigits = image.contactName.replace(/\D/g, '');
                 contact = appData.contacts.find(c =>
                     c.phone === image.contactName ||
                     c.name === image.contactName ||
-                    (c.phone && image.contactName && c.phone.replace(/\D/g, '').includes(image.contactName.replace(/\D/g, '')))
+                    // Only do phone matching if contactName has digits (at least 7 for a phone number)
+                    (imageDigits.length >= 7 && c.phone && c.phone.replace(/\D/g, '').includes(imageDigits))
                 );
             }
-            const displayName = contact ? contact.name : (image.contactName || 'Unknown');
+            // Use contactName directly since it already has the resolved name
+            const displayName = image.contactName || 'Unknown';
 
             document.getElementById('lightboxImage').src = image.url;
             document.getElementById('lightboxContactName').textContent = displayName;
