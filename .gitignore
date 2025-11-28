@@ -1,0 +1,31 @@
+# Personal data - DO NOT COMMIT
+imessage_data.json
+imessage_data_backup*.json
+imessage_data_before_*.json
+contact_mappings.json
+*.vcf
+
+# Image directories with personal photos
+web_ready_images/
+extracted_images/
+imessage_attachments/
+
+# macOS
+.DS_Store
+*.swp
+
+# Archive of old scripts
+archive/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.env
+
+# IDE
+.vscode/
+.idea/
+
+# Claude Code
+.claude/
