@@ -33,8 +33,8 @@ DATA_FILE = 'imessage_data.json'
 MAPPINGS_FILE = 'contact_mappings.json'
 ATTACHMENTS_DIR = 'imessage_attachments'
 WEB_IMAGES_DIR = 'web_ready_images'
-MESSAGE_LIMIT = 50000
-ATTACHMENT_LIMIT = 500
+MESSAGE_LIMIT = 500000  # 500k to get all messages (most people have <300k)
+ATTACHMENT_LIMIT = 2000  # More attachments
 
 # ============================================================================
 # Utility Functions
