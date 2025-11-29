@@ -869,15 +869,63 @@ def cmd_update():
     new_messages = [m for m in new_data['messages'] if m['id'] not in existing_ids]
 
     if new_messages:
-        existing['messages'] = new_messages + existing['messages']
+        # Build lookup from new contact ID -> phone/chat_identifier
+        new_contact_lookup = {c['id']: c for c in new_data['contacts']}
 
-        # Update contacts
-        existing_contact_ids = {c['id'] for c in existing['contacts']}
+        # Build lookup from phone/chat_identifier -> existing contact ID
+        existing_phone_to_id = {}
+        for c in existing['contacts']:
+            phone = c.get('phone', '')
+            if phone:
+                # Direct match (works for chat identifiers like chat123456)
+                existing_phone_to_id[phone] = c['id']
+                # Also map normalized phone (for phone numbers)
+                if not phone.startswith('chat'):
+                    cleaned = re.sub(r'\D', '', phone)
+                    if cleaned:
+                        existing_phone_to_id[cleaned] = c['id']
+                        existing_phone_to_id[f"+{cleaned}"] = c['id']
+                        # Also last 10 digits for matching
+                        if len(cleaned) >= 10:
+                            existing_phone_to_id[cleaned[-10:]] = c['id']
+
+        # Get next contact ID for truly new contacts
+        max_existing_id = max(c['id'] for c in existing['contacts']) if existing['contacts'] else 0
+
+        # Map new contact IDs to existing ones (or create new)
+        new_to_existing_id = {}
         new_contacts_added = 0
-        for contact in new_data['contacts']:
-            if contact['id'] not in existing_contact_ids:
-                existing['contacts'].append(contact)
+        for new_contact in new_data['contacts']:
+            phone = new_contact.get('phone', '')
+            existing_id = None
+
+            # Try to find existing contact by phone/identifier
+            if phone in existing_phone_to_id:
+                existing_id = existing_phone_to_id[phone]
+            else:
+                cleaned = re.sub(r'\D', '', phone)
+                if cleaned in existing_phone_to_id:
+                    existing_id = existing_phone_to_id[cleaned]
+
+            original_id = new_contact['id']
+            if existing_id:
+                new_to_existing_id[original_id] = existing_id
+            else:
+                # Truly new contact - assign new ID
+                max_existing_id += 1
+                new_to_existing_id[original_id] = max_existing_id
+                new_contact['id'] = max_existing_id
+                existing['contacts'].append(new_contact)
+                existing_phone_to_id[phone] = max_existing_id
                 new_contacts_added += 1
+
+        # Remap contactIds in new messages
+        for msg in new_messages:
+            old_contact_id = msg['contactId']
+            if old_contact_id in new_to_existing_id:
+                msg['contactId'] = new_to_existing_id[old_contact_id]
+
+        existing['messages'] = new_messages + existing['messages']
 
         # Resolve any new unresolved contacts via AppleScript
         if new_contacts_added > 0:
