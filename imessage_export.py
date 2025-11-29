@@ -34,7 +34,7 @@ MAPPINGS_FILE = 'contact_mappings.json'
 ATTACHMENTS_DIR = 'imessage_attachments'
 WEB_IMAGES_DIR = 'web_ready_images'
 MESSAGE_LIMIT = 500000  # 500k to get all messages (most people have <300k)
-ATTACHMENT_LIMIT = 2000  # More attachments
+ATTACHMENT_LIMIT = 20000  # Get all attachments (historical data has ~15k)
 
 # ============================================================================
 # Utility Functions
@@ -337,6 +337,63 @@ def resolve_contacts_via_applescript(phones_to_resolve, limit=50):
 
     return resolved
 
+
+def resolve_unresolved_contacts(data, mappings, limit=100):
+    """Find and resolve unresolved contacts via AppleScript"""
+    # Find contacts that still show as phone numbers or emails
+    unresolved = []
+    for contact in data.get('contacts', []):
+        if contact.get('isGroupChat'):
+            continue
+        name = contact.get('name', '')
+        phone = contact.get('phone', '')
+        # Check if name is unresolved (phone number, email, or chat ID)
+        if name.startswith('+') or '@' in name or name.startswith('chat'):
+            if phone and phone not in unresolved:
+                unresolved.append(phone)
+
+    if not unresolved:
+        return 0
+
+    print(f"  Found {len(unresolved)} unresolved contacts")
+
+    # Resolve via AppleScript
+    resolved = resolve_contacts_via_applescript(unresolved, limit=limit)
+
+    if not resolved:
+        print(f"  ⚠️  Could not resolve any contacts")
+        return 0
+
+    # Update mappings
+    for phone, name in resolved.items():
+        mappings['phone_to_name'][phone] = name
+        cleaned = re.sub(r'\D', '', phone)
+        if cleaned:
+            mappings['phone_to_name'][cleaned] = name
+            mappings['phone_to_name'][f"+{cleaned}"] = name
+
+    save_mappings(mappings)
+
+    # Update contact names in data
+    updated = 0
+    for contact in data.get('contacts', []):
+        phone = contact.get('phone', '')
+        if phone in resolved:
+            contact['name'] = resolved[phone]
+            updated += 1
+        else:
+            # Try normalized phone
+            cleaned = re.sub(r'\D', '', phone)
+            for orig_phone, name in resolved.items():
+                if re.sub(r'\D', '', orig_phone) == cleaned:
+                    contact['name'] = name
+                    updated += 1
+                    break
+
+    print(f"  ✅ Resolved {len(resolved)} contacts, updated {updated} in data")
+    return len(resolved)
+
+
 # ============================================================================
 # Message Extraction
 # ============================================================================
@@ -537,7 +594,8 @@ def extract_attachments(limit=ATTACHMENT_LIMIT):
         datetime(m.date/1000000000 + 978307200, 'unixepoch') as message_date,
         m.is_from_me,
         COALESCE(h.id, c.chat_identifier) as contact_identifier,
-        c.display_name as chat_display_name
+        c.display_name as chat_display_name,
+        m.ROWID as message_id
     FROM attachment a
     JOIN message_attachment_join maj ON a.ROWID = maj.attachment_id
     JOIN message m ON maj.message_id = m.ROWID
@@ -564,7 +622,7 @@ def extract_attachments(limit=ATTACHMENT_LIMIT):
 
     attachments = []
     for row in results:
-        filename, mime_type, transfer_name, date, is_from_me, contact_id, display_name = row
+        filename, mime_type, transfer_name, date, is_from_me, contact_id, display_name, message_id = row
         contact_name = display_name or contact_id
         if contact_id and not display_name:
             if contact_id.startswith('+'):
@@ -577,7 +635,8 @@ def extract_attachments(limit=ATTACHMENT_LIMIT):
             'date': date,
             'isFromMe': bool(is_from_me),
             'contactId': contact_id,
-            'contactName': contact_name
+            'contactName': contact_name,
+            'messageId': message_id
         })
 
     return attachments
@@ -673,7 +732,8 @@ def copy_and_convert_attachments(attachments, mappings):
             'date': att['date'],
             'contactName': contact_name,
             'isFromMe': att['isFromMe'],
-            'mimeType': att.get('mimeType', 'image/jpeg')
+            'mimeType': att.get('mimeType', 'image/jpeg'),
+            'messageId': att.get('messageId')
         })
 
     print(f"  ✅ Copied {copied} files, converted {converted} HEIC images")
@@ -740,16 +800,22 @@ def cmd_full_export():
         save_mappings(mappings)
         print(f"  ✅ Added {new_mappings} new contact mappings")
 
-    # Step 5: Extract attachments
-    print("\n📎 Step 5: Extracting attachments...")
+    # Step 5: Resolve unresolved contacts via AppleScript
+    print("\n🔍 Step 5: Resolving contacts via macOS Contacts...")
+    resolved_count = resolve_unresolved_contacts(data, mappings, limit=100)
+    if resolved_count == 0:
+        print("  ✅ All contacts already resolved")
+
+    # Step 6: Extract attachments
+    print("\n📎 Step 6: Extracting attachments...")
     attachments = extract_attachments(limit=ATTACHMENT_LIMIT)
     if attachments:
         images = copy_and_convert_attachments(attachments, mappings)
         data['images'] = images
         data['statistics']['totalImages'] = len(images)
 
-    # Step 6: Save data
-    print("\n💾 Step 6: Saving data...")
+    # Step 7: Save data
+    print("\n💾 Step 7: Saving data...")
     save_data(data)
     print(f"  ✅ Saved to {DATA_FILE}")
 
@@ -807,9 +873,16 @@ def cmd_update():
 
         # Update contacts
         existing_contact_ids = {c['id'] for c in existing['contacts']}
+        new_contacts_added = 0
         for contact in new_data['contacts']:
             if contact['id'] not in existing_contact_ids:
                 existing['contacts'].append(contact)
+                new_contacts_added += 1
+
+        # Resolve any new unresolved contacts via AppleScript
+        if new_contacts_added > 0:
+            print(f"\n🔍 Resolving {new_contacts_added} new contacts...")
+            resolve_unresolved_contacts(existing, mappings, limit=50)
 
         # Recalculate statistics
         existing['statistics'] = calculate_statistics(existing['messages'], existing['contacts'])

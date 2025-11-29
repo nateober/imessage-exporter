@@ -654,6 +654,28 @@
             color: var(--text-secondary);
         }
 
+        /* Inline message attachments */
+        .message-attachment {
+            margin-bottom: 0.5rem;
+            border-radius: 12px;
+            overflow: hidden;
+        }
+
+        .message-attachment img {
+            max-width: 280px;
+            max-height: 300px;
+            width: 100%;
+            height: auto;
+            border-radius: 12px;
+            cursor: pointer;
+            display: block;
+            transition: transform 0.2s ease;
+        }
+
+        .message-attachment img:hover {
+            transform: scale(1.02);
+        }
+
         /* Charts */
         .chart-container {
             background-color: var(--card-background);
@@ -1384,6 +1406,7 @@
         let imageLoadOffset = 0;
         const imageLoadLimit = 50;
         let viewMode = 'standard';
+        let attachmentsByMessageId = {};  // Lookup for inline image display
 
         // Function to load data from JSON file
         function loadDataFromJson() {
@@ -1398,7 +1421,19 @@
                     // Store data globally
                     appData = data;
                     allMessages = data.messages || [];
-                    
+
+                    // Build attachment lookup by message ID for inline display
+                    attachmentsByMessageId = {};
+                    (data.images || []).forEach(img => {
+                        if (img.messageId) {
+                            if (!attachmentsByMessageId[img.messageId]) {
+                                attachmentsByMessageId[img.messageId] = [];
+                            }
+                            attachmentsByMessageId[img.messageId].push(img);
+                        }
+                    });
+                    console.log(`Built attachment lookup: ${Object.keys(attachmentsByMessageId).length} messages with attachments`);
+
                     // Initialize the app with loaded data
                     loadContacts();
                     loadStatistics();
@@ -1662,12 +1697,12 @@
         function displayMessages(messages) {
             const container = document.getElementById('messagesContainer');
             container.innerHTML = '';
-            
+
             let lastDate = null;
-            
+
             messages.forEach((message, index) => {
                 const messageDate = new Date(message.date).toDateString();
-                
+
                 // Add date separator if needed
                 if (messageDate !== lastDate) {
                     const separator = document.createElement('div');
@@ -1676,18 +1711,38 @@
                     container.appendChild(separator);
                     lastDate = messageDate;
                 }
-                
+
                 const messageEl = document.createElement('div');
                 messageEl.className = `message ${message.isFromMe ? 'sent' : 'received'}`;
-                
+
+                // Check for inline attachments
+                const attachments = attachmentsByMessageId[message.id] || [];
+                let attachmentHtml = '';
+                if (attachments.length > 0) {
+                    attachmentHtml = attachments.map(att => `
+                        <div class="message-attachment">
+                            <img src="${att.url}"
+                                 alt="Attachment"
+                                 loading="lazy"
+                                 onclick="openLightbox(${filteredImages.findIndex(img => img.url === att.url)})"
+                                 onerror="this.style.display='none';">
+                        </div>
+                    `).join('');
+                }
+
+                // Show content and/or attachments
+                const hasContent = message.content && message.content.trim();
+                const contentHtml = hasContent ? `<div class="message-content">${escapeHtml(message.content)}</div>` : '';
+
                 messageEl.innerHTML = `
-                    <div class="message-content">${escapeHtml(message.content)}</div>
+                    ${attachmentHtml}
+                    ${contentHtml}
                     <div class="message-time">${formatTime(message.date)}</div>
                 `;
-                
+
                 container.appendChild(messageEl);
             });
-            
+
             // Scroll to bottom
             setTimeout(() => {
                 container.scrollTop = container.scrollHeight;
@@ -2223,27 +2278,45 @@
         // Filter images based on current filter settings
         function filterImages() {
             if (!appData.images) return [];
-            
+
             let filtered = [...appData.images];
-            
-            // Contact filter
+
+            // Contact filter - match by contact name or phone
             const contactId = document.getElementById('imageContactFilter').value;
             if (contactId) {
-                filtered = filtered.filter(img => img.contactId == contactId);
+                // Find the selected contact
+                const contact = appData.contacts.find(c => c.id == contactId);
+                if (contact) {
+                    // Match images by contactName (can be name or phone number)
+                    filtered = filtered.filter(img => {
+                        const imgContact = img.contactName || '';
+                        // Match by exact name
+                        if (imgContact === contact.name) return true;
+                        // Match by display name (for group chats)
+                        if (contact.displayName && imgContact === contact.displayName) return true;
+                        // Match by phone number (normalize both)
+                        const imgDigits = imgContact.replace(/\D/g, '');
+                        const contactDigits = (contact.phone || '').replace(/\D/g, '');
+                        if (imgDigits.length >= 7 && contactDigits.length >= 7) {
+                            return contactDigits.includes(imgDigits) || imgDigits.includes(contactDigits);
+                        }
+                        return false;
+                    });
+                }
             }
-            
+
             // Date filter
             const dateFrom = document.getElementById('imageDateFrom').value;
             const dateTo = document.getElementById('imageDateTo').value;
-            
+
             if (dateFrom) {
                 filtered = filtered.filter(img => img.date >= dateFrom);
             }
-            
+
             if (dateTo) {
                 filtered = filtered.filter(img => img.date <= dateTo + 'T23:59:59');
             }
-            
+
             return filtered;
         }
 
